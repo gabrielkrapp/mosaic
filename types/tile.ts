@@ -5,7 +5,6 @@ export type Tile = {
   size: TileSize; // S/M/L
   text?: string; // limited by size
   link?: string; // optional
-  ownerMasked?: string; // e.g., 0x12…9fA
   expiresAt?: string; // ISO - when occupied
   row: number; // grid row position
   col: number; // grid col position

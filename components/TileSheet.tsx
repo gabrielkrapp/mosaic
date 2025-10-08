@@ -10,7 +10,7 @@ import { initiatePayment } from '@/lib/worldpay';
 interface TileSheetProps {
   tile: Tile | null;
   onClose: () => void;
-  onPurchase: (tile: Tile, text: string, link: string, days: number) => void;
+  onPurchase: (tile: Tile, text: string, link: string, days: number) => Promise<void>;
 }
 
 export default function TileSheet({ tile, onClose, onPurchase }: TileSheetProps) {
@@ -18,7 +18,6 @@ export default function TileSheet({ tile, onClose, onPurchase }: TileSheetProps)
   const [text, setText] = useState('');
   const [link, setLink] = useState('');
   const [countdown, setCountdown] = useState('');
-  const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState('');
   const [paying, setPaying] = useState(false);
 
@@ -51,11 +50,13 @@ export default function TileSheet({ tile, onClose, onPurchase }: TileSheetProps)
   }, [tile]);
 
   const handleTextChange = (value: string) => {
-    if (value.length <= maxChars) {
-      setText(value);
+    // Limita o tamanho no próprio handler
+    const trimmedValue = value.slice(0, maxChars);
+    setText(trimmedValue);
+    
+    // Limpa qualquer erro de tamanho se estava mostrando
+    if (error && error.includes('Text too long')) {
       setError('');
-    } else {
-      setError(`Text too long (max ${maxChars})`);
     }
   };
 
@@ -91,22 +92,17 @@ export default function TileSheet({ tile, onClose, onPurchase }: TileSheetProps)
       const payload = await initiatePayment(totalPrice, `Mosaic spot #${tile.id} - ${days} day${days > 1 ? 's' : ''}`);
       
       if (payload.finalPayload.status === 'success') {
-        setConfirmed(true);
-        setError('');
+        // Pagamento confirmado - ativa automaticamente
+        await onPurchase(tile, text.trim(), link.trim(), days);
+        onClose();
       } else {
         setError('Payment was cancelled');
+        setPaying(false);
       }
     } catch (err: any) {
       setError(err.message || 'Payment failed');
-    } finally {
       setPaying(false);
     }
-  };
-
-  const handleConfirmPurchase = () => {
-    if (!tile) return;
-    onPurchase(tile, text.trim(), link.trim(), days);
-    onClose();
   };
 
   if (!tile) return null;
@@ -361,57 +357,41 @@ export default function TileSheet({ tile, onClose, onPurchase }: TileSheetProps)
                 </div>
               </div>
 
-              {!confirmed ? (
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <button
-                    onClick={handlePayment}
-                    disabled={!text.trim() || !!error || paying}
-                    style={{
-                      flex: 1,
-                      height: '48px',
-                      backgroundColor: (!text.trim() || !!error || paying) ? '#d1d5db' : 'black',
-                      color: (!text.trim() || !!error || paying) ? '#6b7280' : 'white',
-                      fontWeight: 600,
-                      borderRadius: '12px',
-                      border: 'none',
-                      cursor: (!text.trim() || !!error || paying) ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    {paying ? 'Processing...' : 'Pay with World App'}
-                  </button>
-                  <button
-                    onClick={onClose}
-                    style={{
-                      height: '48px',
-                      padding: '0 20px',
-                      backgroundColor: '#e5e7eb',
-                      color: 'black',
-                      fontWeight: 600,
-                      borderRadius: '12px',
-                      border: 'none',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
+              <div style={{ display: 'flex', gap: '12px' }}>
                 <button
-                  onClick={handleConfirmPurchase}
+                  onClick={handlePayment}
+                  disabled={!text.trim() || !!error || paying}
                   style={{
-                    width: '100%',
+                    flex: 1,
                     height: '48px',
-                    backgroundColor: '#16a34a',
-                    color: 'white',
+                    backgroundColor: (!text.trim() || !!error || paying) ? '#d1d5db' : 'black',
+                    color: (!text.trim() || !!error || paying) ? '#6b7280' : 'white',
                     fontWeight: 600,
                     borderRadius: '12px',
                     border: 'none',
-                    cursor: 'pointer'
+                    cursor: (!text.trim() || !!error || paying) ? 'not-allowed' : 'pointer'
                   }}
                 >
-                  ✓ Confirm & Activate
+                  {paying ? 'Processing...' : 'Pay'}
                 </button>
-              )}
+                <button
+                  onClick={onClose}
+                  disabled={paying}
+                  style={{
+                    height: '48px',
+                    padding: '0 20px',
+                    backgroundColor: '#e5e7eb',
+                    color: 'black',
+                    fontWeight: 600,
+                    borderRadius: '12px',
+                    border: 'none',
+                    cursor: paying ? 'not-allowed' : 'pointer',
+                    opacity: paying ? 0.5 : 1
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
             </>
           )}
         </div>

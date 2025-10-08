@@ -11,6 +11,7 @@
     "@worldcoin/minikit-js": "^1.9.7",
     "@worldcoin/minikit-react": "^1.9.8",
     "framer-motion": "^12.23.22",
+    "ioredis": "^5.8.1",
     "next": "15.5.4",
     "react": "19.1.0",
     "react-dom": "19.1.0",
@@ -21,6 +22,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dotenv": "^17.2.3",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

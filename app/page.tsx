@@ -1,10 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Tile } from '@/types/tile';
-import { loadTiles, saveTiles } from '@/lib/storage';
-import { seedTiles } from '@/lib/seed';
-import { daysFromNowISO, msUntil } from '@/lib/time';
+import { migrateToBackend, loadTiles, savePurchase } from '@/lib/storage';
+import { daysFromNowISO } from '@/lib/time';
 import Header from '@/components/Header';
 import Grid from '@/components/Grid';
 import TileSheet from '@/components/TileSheet';
@@ -17,51 +16,49 @@ export default function Home() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' } | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Função para carregar tiles do backend
+  const fetchTiles = useCallback(async () => {
+    try {
+      const loadedTiles = await loadTiles();
+      setTiles(loadedTiles);
+      return loadedTiles;
+    } catch (error) {
+      console.error('Error fetching tiles:', error);
+      return [];
+    }
+  }, []);
+
+  // Inicialização e migração
   useEffect(() => {
-    let loadedTiles = loadTiles();
-    if (loadedTiles.length === 0) {
-      loadedTiles = seedTiles();
-      saveTiles(loadedTiles);
+    async function initialize() {
+      try {
+        // Tenta migrar dados do localStorage para o backend (se existirem)
+        const loadedTiles = await migrateToBackend();
+        setTiles(loadedTiles);
+      } catch (error) {
+        console.error('Error initializing:', error);
+        setToast({ 
+          message: 'Failed to load tiles. Please refresh the page.', 
+          type: 'error' 
+        });
+      } finally {
+        setLoading(false);
+      }
     }
 
-    const cleanedTiles = loadedTiles.map(tile => {
-      if (tile.expiresAt && msUntil(tile.expiresAt) <= 0) {
-        return {
-          ...tile,
-          text: undefined,
-          link: undefined,
-          ownerMasked: undefined,
-          expiresAt: undefined,
-        };
-      }
-      return tile;
-    });
-
-    setTiles(cleanedTiles);
-    saveTiles(cleanedTiles);
-    setLoading(false);
-
-    const interval = setInterval(() => {
-      setTiles(prevTiles => {
-        const updatedTiles = prevTiles.map(tile => {
-          if (tile.expiresAt && msUntil(tile.expiresAt) <= 0) {
-            return {
-              ...tile,
-              text: undefined,
-              link: undefined,
-              ownerMasked: undefined,
-              expiresAt: undefined,
-            };
-          }
-          return tile;
-        });
-        saveTiles(updatedTiles);
-        return updatedTiles;
-      });
-    }, 60000);
-
-    return () => clearInterval(interval);
+    initialize();
   }, []);
+
+  // Polling para atualizações em tempo real (a cada 5 segundos)
+  useEffect(() => {
+    if (loading) return;
+
+    const pollingInterval = setInterval(async () => {
+      await fetchTiles();
+    }, 5000);
+
+    return () => clearInterval(pollingInterval);
+  }, [loading, fetchTiles]);
 
   const handleTileClick = (tile: Tile) => {
     setSelectedTile(tile);
@@ -78,23 +75,32 @@ export default function Home() {
     }
   };
 
-  const handlePurchase = (tile: Tile, text: string, link: string, days: number) => {
-    const updatedTiles = tiles.map(t => {
-      if (t.id === tile.id) {
-        return {
-          ...t,
-          text,
-          link: link || undefined,
-          ownerMasked: `0x${Math.random().toString(16).slice(2, 6)}…${Math.random().toString(16).slice(2, 6)}`,
-          expiresAt: daysFromNowISO(days),
-        };
-      }
-      return t;
-    });
+  const handlePurchase = async (tile: Tile, text: string, link: string, days: number) => {
+    const purchasedTile: Tile = {
+      ...tile,
+      text,
+      link: link || undefined,
+      ownerMasked: `0x${Math.random().toString(16).slice(2, 6)}…${Math.random().toString(16).slice(2, 6)}`,
+      expiresAt: daysFromNowISO(days),
+    };
 
-    setTiles(updatedTiles);
-    saveTiles(updatedTiles);
-    setToast({ message: '✓ Advertisement activated!', type: 'success' });
+    // Atualiza localmente primeiro (UI otimista)
+    setTiles(prevTiles => 
+      prevTiles.map(t => t.id === tile.id ? purchasedTile : t)
+    );
+    
+    // Salva no Redis (só este tile)
+    const success = await savePurchase(purchasedTile);
+    
+    if (success) {
+      setToast({ message: '✓ Advertisement activated!', type: 'success' });
+      // Recarrega para garantir sincronização
+      await fetchTiles();
+    } else {
+      setToast({ message: '⚠ Failed to save. Please try again.', type: 'error' });
+      // Reverte update otimista
+      await fetchTiles();
+    }
   };
 
   if (loading) {
