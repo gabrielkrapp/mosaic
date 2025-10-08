@@ -80,7 +80,6 @@ export default function Home() {
       ...tile,
       text,
       link: link || undefined,
-      ownerMasked: `0x${Math.random().toString(16).slice(2, 6)}…${Math.random().toString(16).slice(2, 6)}`,
       expiresAt: daysFromNowISO(days),
     };
 
